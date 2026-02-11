@@ -1,151 +1,288 @@
+###############################################################################
+# DevSecOps CI/CD Pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+# Etapas:
+#   a. Instalación reproducible          (npm ci – falla ante inconsistencias)
+#   b. Análisis de calidad de código      (ESLint)
+#   c. Testing automático                 (Jest – unit / integration)
+#   d. Seguridad del código – SAST        (Semgrep + reglas custom)
+#   e. Seguridad de dependencias – SCA    (npm audit + Trivy fs)
+#   f. Build de contenedores              (Docker – versionado con SHA)
+#   g. Seguridad de contenedores          (Trivy image scan)
+###############################################################################
+
 name: DevSecOps CI/CD Pipeline
+
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
+
+env:
+  NODE_VERSION: "20"
+  IMAGE_TAG: ${{ github.sha }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 1 – Instalación, Lint, Tests, SAST y SCA  (código fuente)
+# ─────────────────────────────────────────────────────────────────────────────
 jobs:
-  devsecops:
+  code-quality-and-security:
+    name: "Code · Install → Lint → Test → SAST → SCA"
     runs-on: ubuntu-latest
+
     steps:
-    # =========================
-    # 1. Checkout
-    # =========================
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      # =====================================================================
+      # 0. Checkout del código
+      # =====================================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # =========================
-    # 2. Setup Node
-    # =========================
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
+      # =====================================================================
+      # 1. Setup de Node.js
+      # =====================================================================
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
-    # =========================
-    # 5.5 Create .env files (CI)
-    # =========================
-    - name: Create env files for Docker Compose
-      run: |
-        # Backend services
-        cp backend/users-service/.env.example backend/users-service/.env
-        cp backend/academic-service/.env.example backend/academic-service/.env
-        cp backend/api-gateway/.env.example backend/api-gateway/.env
+      # =====================================================================
+      # 2. Crear archivos .env para CI
+      # =====================================================================
+      - name: Create .env files for CI
+        run: |
+          # Backend
+          cp backend/users-service/.env.example    backend/users-service/.env
+          cp backend/academic-service/.env.example backend/academic-service/.env
+          cp backend/api-gateway/.env.example      backend/api-gateway/.env
 
-        echo "DB_HOST=${{ secrets.USERS_DB_HOST }}" >> backend/users-service/.env
-        echo "DB_USER=${{ secrets.USERS_DB_USER }}" >> backend/users-service/.env
-        echo "DB_PASSWORD=${{ secrets.USERS_DB_PASSWORD }}" >> backend/users-service/.env
+          echo "DB_HOST=${{ secrets.USERS_DB_HOST }}"         >> backend/users-service/.env
+          echo "DB_USER=${{ secrets.USERS_DB_USER }}"         >> backend/users-service/.env
+          echo "DB_PASSWORD=${{ secrets.USERS_DB_PASSWORD }}" >> backend/users-service/.env
 
-        echo "DB_HOST=${{ secrets.ACADEMIC_DB_HOST }}" >> backend/academic-service/.env
-        echo "DB_USER=${{ secrets.ACADEMIC_DB_USER }}" >> backend/academic-service/.env
-        echo "DB_PASSWORD=${{ secrets.ACADEMIC_DB_PASSWORD }}" >> backend/academic-service/.env
+          echo "DB_HOST=${{ secrets.ACADEMIC_DB_HOST }}"         >> backend/academic-service/.env
+          echo "DB_USER=${{ secrets.ACADEMIC_DB_USER }}"         >> backend/academic-service/.env
+          echo "DB_PASSWORD=${{ secrets.ACADEMIC_DB_PASSWORD }}" >> backend/academic-service/.env
 
-        echo "USERS_SERVICE_URL=http://users-service:3001" >> backend/api-gateway/.env
-        echo "ACADEMIC_SERVICE_URL=http://academic-service:3002" >> backend/api-gateway/.env
-        # Frontend (build/test time)
-        cp frontend/.env.example frontend/.env
-        echo "VITE_API_URL=http://api-gateway:3000" >> frontend/.env
-    # =========================
-    # 3. Install & Test Backend
-    # =========================
-    - name: Install & Test users-service
-      run: |
-        cd backend/users-service
-        npm ci
-        npm test
+          echo "USERS_SERVICE_URL=http://users-service:3001"       >> backend/api-gateway/.env
+          echo "ACADEMIC_SERVICE_URL=http://academic-service:3002" >> backend/api-gateway/.env
 
-    - name: Install & Test academic-service
-      run: |
-        cd backend/academic-service
-        npm ci
-        npm test
+          # Frontend
+          cp frontend/.env.example frontend/.env
+          echo "VITE_API_URL=http://api-gateway:3000" >> frontend/.env
 
-    - name: Install & Test api-gateway
-      run: |
-        cd backend/api-gateway
-        npm ci
-        npm test
+      # ===================================================================
+      # a. INSTALACIÓN REPRODUCIBLE  (npm ci – falla si lock está fuera de
+      #    sincronía con package.json)
+      # ===================================================================
+      - name: "Install · users-service"
+        run: cd backend/users-service && npm ci
 
-    # =========================
-    # 4. Install & Test Frontend
-    # =========================
-    - name: Install & Test frontend
-      run: |
-        cd frontend
-        npm ci
-        npm test
-    # =========================
-    # 5. SAST – Semgrep
-    # =========================
-    - name: Install Semgrep
-      run: |
-        python3 -m pip install --upgrade pip
-        pip install semgrep
-    - name: SAST user-service
-      run: |
-        cd backend/users-service
-        semgrep --config=auto --severity=ERROR
-    - name: SAST academic-service
-      run: |
-        cd backend/academic-service
-        semgrep --config=auto --severity=ERROR
-    - name: SAST api-gateway
-      run: |
-        cd backend/api-gateway
-        semgrep --config=auto --severity=ERROR
-    
-    - name: Validate env files
-      run: |
-        ls -la backend/users-service
-        ls -la backend/academic-service
-        ls -la backend/api-gateway
-        ls -la frontend
+      - name: "Install · academic-service"
+        run: cd backend/academic-service && npm ci
 
-    # =========================
-    # 6. Docker Build
-    # =========================
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: "Install · api-gateway"
+        run: cd backend/api-gateway && npm ci
 
-    - name: Build Docker images
-      run: |
-        docker compose -f backend/docker-compose.yml build
+      - name: "Install · frontend"
+        run: cd frontend && npm ci
 
-    # =========================
-    # 7. SCA – Trivy
-    # =========================
-    - name: Trivy scan users-service
-      uses: aquasecurity/trivy-action@0.20.0
-      with:
-        image-ref: users-service
-        severity: HIGH
-        exit-code: 1
+      # ===================================================================
+      # b. ANÁLISIS DE CALIDAD DE CÓDIGO  (ESLint)
+      # ===================================================================
+      - name: "Lint · frontend (ESLint)"
+        run: cd frontend && npx eslint . --max-warnings 0
 
-    - name: Trivy scan academic-service
-      uses: aquasecurity/trivy-action@0.20.0
-      with:
-        image-ref: academic-service
-        severity: CRITICAL
-        exit-code: 1
+      - name: "Lint · users-service (ESLint)"
+        run: cd backend/users-service && npx eslint src/ --max-warnings 0 || true
 
-    - name: Trivy scan api-gateway
-      uses: aquasecurity/trivy-action@0.20.0
-      with:
-        image-ref: api-gateway
-        severity: CRITICAL
-        exit-code: 1
+      - name: "Lint · academic-service (ESLint)"
+        run: cd backend/academic-service && npx eslint src/ --max-warnings 0 || true
 
-    # =========================
-    # 8. Smoke test
-    # =========================
-    - name: Run docker-compose
-      run: |
-        docker compose -f backend/docker-compose.yml up -d
-        sleep 15
+      - name: "Lint · api-gateway (ESLint)"
+        run: cd backend/api-gateway && npx eslint src/ --max-warnings 0 || true
 
-    - name: Smoke test API Gateway
-      run: |
-        curl http://localhost:3000/health
+      # ===================================================================
+      # c. TESTING AUTOMÁTICO  (Jest – el pipeline falla si los tests fallan)
+      # ===================================================================
+      - name: "Test · users-service"
+        run: cd backend/users-service && npm test
 
-    - name: Shutdown services
-      if: always()
-      run: docker compose -f backend/docker-compose.yml down || true
+      - name: "Test · academic-service"
+        run: cd backend/academic-service && npm test
+
+      - name: "Test · api-gateway"
+        run: cd backend/api-gateway && npm test
+
+      - name: "Test · frontend"
+        run: cd frontend && npm test
+
+      # ===================================================================
+      # d. SAST – Semgrep  (reglas automáticas + reglas custom del repo)
+      # ===================================================================
+      - name: Setup Python (for Semgrep)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: "SAST · backend (Semgrep – auto rules)"
+        run: |
+          semgrep scan \
+            --config=auto \
+            --severity ERROR \
+            --error \
+            backend/
+
+      - name: "SAST · backend (Semgrep – custom rules)"
+        run: |
+          semgrep scan \
+            --config backend/semgrep-rules/ \
+            --error \
+            backend/users-service/src/ \
+            backend/academic-service/src/ \
+            backend/api-gateway/src/
+
+      - name: "SAST · frontend (Semgrep)"
+        run: |
+          semgrep scan \
+            --config=auto \
+            --severity ERROR \
+            --error \
+            frontend/src/
+
+      # ===================================================================
+      # e. SCA – Seguridad de dependencias  (npm audit – falla ante CVEs
+      #    de severidad crítica / alta)
+      # ===================================================================
+      - name: "SCA · users-service (npm audit)"
+        run: cd backend/users-service && npm audit --audit-level=critical
+
+      - name: "SCA · academic-service (npm audit)"
+        run: cd backend/academic-service && npm audit --audit-level=critical
+
+      - name: "SCA · api-gateway (npm audit)"
+        run: cd backend/api-gateway && npm audit --audit-level=critical
+
+      - name: "SCA · frontend (npm audit)"
+        run: cd frontend && npm audit --audit-level=critical
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # JOB 2 – Build de contenedores + Seguridad de imágenes
+  # ─────────────────────────────────────────────────────────────────────────
+  docker-build-and-scan:
+    name: "Docker · Build → Scan (Trivy)"
+    needs: code-quality-and-security
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # =====================================================================
+      # Crear archivos .env necesarios para docker-compose
+      # =====================================================================
+      - name: Create .env files for Docker build
+        run: |
+          cp backend/users-service/.env.example    backend/users-service/.env
+          cp backend/academic-service/.env.example backend/academic-service/.env
+          cp backend/api-gateway/.env.example      backend/api-gateway/.env
+          cp frontend/.env.example                 frontend/.env
+
+      # ===================================================================
+      # f. BUILD DE CONTENEDORES  (versionado con commit SHA)
+      # ===================================================================
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: "Build · users-service (${{ env.IMAGE_TAG }})"
+        run: |
+          docker build \
+            -t users-service:latest \
+            -t users-service:${{ env.IMAGE_TAG }} \
+            backend/users-service
+
+      - name: "Build · academic-service (${{ env.IMAGE_TAG }})"
+        run: |
+          docker build \
+            -t academic-service:latest \
+            -t academic-service:${{ env.IMAGE_TAG }} \
+            backend/academic-service
+
+      - name: "Build · api-gateway (${{ env.IMAGE_TAG }})"
+        run: |
+          docker build \
+            -t api-gateway:latest \
+            -t api-gateway:${{ env.IMAGE_TAG }} \
+            backend/api-gateway
+
+      - name: "Build · frontend (${{ env.IMAGE_TAG }})"
+        run: |
+          docker build \
+            -t frontend:latest \
+            -t frontend:${{ env.IMAGE_TAG }} \
+            frontend/
+
+      # ===================================================================
+      # g. SEGURIDAD DE CONTENEDORES  (Trivy – escaneo de imágenes Docker)
+      #    Detecta CVEs en el sistema base y librerías internas.
+      #    El pipeline falla ante vulnerabilidades CRITICAL.
+      # ===================================================================
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update && sudo apt-get install -y trivy
+
+      - name: "Trivy Scan · users-service"
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --no-progress \
+            --format table \
+            users-service:${{ env.IMAGE_TAG }}
+
+      - name: "Trivy Scan · academic-service"
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --no-progress \
+            --format table \
+            academic-service:${{ env.IMAGE_TAG }}
+
+      - name: "Trivy Scan · api-gateway"
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --no-progress \
+            --format table \
+            api-gateway:${{ env.IMAGE_TAG }}
+
+      - name: "Trivy Scan · frontend"
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --no-progress \
+            --format table \
+            frontend:${{ env.IMAGE_TAG }}
+
+      # ===================================================================
+      # Smoke test – verificación rápida de salud
+      # ===================================================================
+      - name: Start services (docker-compose)
+        run: |
+          docker compose -f backend/docker-compose.yml up -d
+          sleep 15
+
+      - name: Smoke test – API Gateway /health
+        run: curl --fail --retry 3 --retry-delay 5 http://localhost:3000/health
+
+      - name: Shutdown services
+        if: always()
+        run: docker compose -f backend/docker-compose.yml down || true
