@@ -273,7 +273,7 @@ jobs:
             frontend:${{ env.IMAGE_TAG }}
 
       # ===================================================================
-      # Smoke test – verificación rápida de salud
+      # Smoke test – verificación rápida de salud de la aplicación
       # ===================================================================
       - name: Start services (docker-compose)
         run: |
