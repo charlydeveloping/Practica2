@@ -9,6 +9,9 @@ services:
     container_name: users-service
     env_file:
       - ./users-service/.env
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     expose:
       - "3001"
     networks:
@@ -23,6 +26,9 @@ services:
     container_name: academic-service
     env_file:
       - ./academic-service/.env
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     expose:
       - "3002"
     networks:
@@ -39,6 +45,9 @@ services:
     depends_on:
       - users-service
       - academic-service
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     networks:
       - backend-net
 
