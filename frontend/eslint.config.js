@@ -23,14 +23,14 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^_' }],
     },
   },
   // Jest tests: provide jest environment for test files
   {
     files: ['**/__tests__/**', '**/*.test.js', '**/*.spec.js'],
     languageOptions: {
-      env: { jest: true },
+      globals: globals.jest,
     },
   },
   // Cypress config: declare plugin globals used by cypress
