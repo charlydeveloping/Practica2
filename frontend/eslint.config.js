@@ -26,4 +26,18 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  // Jest tests: provide jest environment for test files
+  {
+    files: ['**/__tests__/**', '**/*.test.js', '**/*.spec.js'],
+    languageOptions: {
+      env: { jest: true },
+    },
+  },
+  // Cypress config: declare plugin globals used by cypress
+  {
+    files: ['cypress.config.js'],
+    languageOptions: {
+      globals: { on: 'readonly', config: 'readonly' },
+    },
+  },
 ])
