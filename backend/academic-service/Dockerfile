@@ -4,7 +4,9 @@ WORKDIR /app
 
 COPY package*.json ./
 # Use npm ci to install exact versions from package-lock.json for reproducible builds
-RUN npm ci --only=production
+RUN npm ci --only=production && \
+    npm cache clean --force && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY . .
 
