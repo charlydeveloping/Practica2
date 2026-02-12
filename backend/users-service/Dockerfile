@@ -3,7 +3,8 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --omit=dev
+# Use npm ci to install exact versions from package-lock.json for reproducible builds
+RUN npm ci --only=production
 
 COPY . .
 
